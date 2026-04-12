@@ -1,0 +1,32 @@
+MILESTONE #1:  Input Parameters and Calculated Values
+Cache Simulator - CS 3853 - Team #13
+
+Trace File(s):
+        A-9_new_trunk.trc
+
+***** Cache Input Parameters *****
+
+Cache Size:                     128 KB
+Block Size:                     32 bytes
+Associativity:                  2
+Replacement Policy:             Round Robin
+Physical Memory:                512 MB
+Percent Memory Used by System:  25.0%
+Instructions / Time Slice:      250
+
+***** Cache Calculated Values *****
+
+Total # Blocks:                 4096
+Tag Size:                       13 bits        (based on actual physical memory)
+Index Size:                     11 bits
+Total # Rows:                   2048
+Overhead Size:                  7168 bytes
+Implementation Memory Size:     135.00 KB  (138240 bytes)
+Cost:                           $9.45 @ $0.07 per KB
+
+***** Physical Memory Calculated Values *****
+
+Number of Physical Pages:       131072
+Number of Pages for System:     32768         ( 0.25 * 131072 = 32768 )
+Size of Page Table Entry:       18 bits        (1 valid bit, 17 for PhysPage)
+Total RAM for Page Table(s):    1179648 bytes  (512K entries * 1 .trc files * 18 / 8)
