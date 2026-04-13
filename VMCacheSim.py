@@ -1,90 +1,7 @@
 # CS3853 Group 13, project milestone 1:
 import sys, math, os
 
-
-# project milestone 2: page table and physical memory management classes
-class PageTable:
-    def __init__(self):
-        # 512K entries
-        self.entries = [None] * (512 * 1024)
-        self.pages_owned = []
-
-    def is_valid(self, v_page_num):
-        return self.entries[v_page_num] is not None
-
-    def get_physical_page(self, v_page_num):
-        return self.entries[v_page_num]
-
-    def map(self, v_page_num, p_page_num):
-        self.entries[v_page_num] = p_page_num
-        self.pages_owned.append((v_page_num, p_page_num))
-
-    def unmap(self, v_page_num):
-        self.entries[v_page_num] = None
-        self.pages_owned = [p for p in self.pages_owned if p[0] != v_page_num]
-
-
-class PhysicalMemoryManager:
-    def __init__(self, total_mb, percent_used):
-        total_bytes = total_mb * 1024 * 1024
-        self.total_pages = total_bytes // 4096
-        num_os_pages = int(self.total_pages * (percent_used / 100))
-        # Initially, all pages after the OS-reserved pages are free.
-        self.free_pages = list(range(num_os_pages, self.total_pages))
-        self.page_to_process = {}
-
-    def get_free_page(self):
-        return self.free_pages.pop(0) if self.free_pages else None
-
-
-class Cache:
-    def __init__(self, cache_size_kb, block_size, associativity):
-        self.block_size = block_size
-        pass
-
-    def invalidate_page(self, p_page_num):
-        num_blocks_in_page = 4096 // self.block_size
-
-        # Calculate the starting physical address for this page
-        start_phys_addr = p_page_num * 4096
-
-        for i in range(num_blocks_in_page):
-
-            target_addr = start_phys_addr + (i * self.block_size)
-
-            pass
-
-
-def handle_memory_access(address, proc, phys_mem, all_procs):
-    # Calculate virtual page number
-    v_page_num = address // 4096
-
-    if not proc["page_table"].is_valid(v_page_num):
-        proc["page_faults"] += 1
-        p_page_num = phys_mem.get_free_page()
-
-        if p_page_num is None:
-            # RAM is full, snag a page from another process
-            p_page_num = snag_victim_page(all_procs)
-
-        proc["page_table"].map(v_page_num, p_page_num)
-
-    return proc["page_table"].get_physical_page(v_page_num)
-
-
-def snag_victim_page(all_procs, cache):
-    for p in all_procs:
-        if p["page_table"].pages_owned:
-            v_vic, p_vic = p["page_table"].pages_owned.pop(0)
-            p["page_table"].unmap(v_vic)
-
-            # Invalidate all cache blocks that belong to this physical page
-            cache.invalidate_page(p_vic)
-
-            return p_vic
-    return None
-
-
+# Project Milestone #1: Cache Calculations
 def read_args():
     args = sys.argv[1:]
 
@@ -205,7 +122,6 @@ def check_args(values):
         print("Error: blocks must divide evenly by associativity")
         sys.exit(1)
 
-
 def get_replacement_name(policy):
     if policy == "RR":
         return "Round Robin"
@@ -219,7 +135,7 @@ def get_time_slice_text(time_slice):
     else:
         return str(time_slice)
 
-
+# Takes values and does all calcuations, returning a list of needed information.
 def calculate_values(values):
     # basic sizes:
     cache_size_bytes = values["cache_size"] * 1024
@@ -273,7 +189,7 @@ def calculate_values(values):
         "total_ram_page_tables": total_ram_page_tables,
     }
 
-
+# Handles printing of values and results to fit project requirements.
 def print_results(values, results):
     print("MILESTONE #1:  Input Parameters and Calculated Values")
     print("Cache Simulator - CS 3853 - Team #13")
@@ -327,6 +243,96 @@ def print_results(values, results):
         f"Total RAM for Page Table(s):    {results['total_ram_page_tables']} bytes  (512K entries * {len(values['files'])} .trc files * {results['page_table_entry_size']} / 8)"
     )
 
+
+
+# Project Milestone #2: Page Table and Physical Memory Management Classes
+class Cache:
+    def __init__(self, cache_size_kb, block_size, associativity):
+        self.block_size = block_size
+        pass
+
+    def invalidate_page(self, p_page_num):
+        num_blocks_in_page = 4096 // self.block_size
+
+        # Calculate the starting physical address for this page
+        start_phys_addr = p_page_num * 4096
+
+        for i in range(num_blocks_in_page):
+            target_addr = start_phys_addr + (i * self.block_size)
+            pass
+
+class PageTable:
+    def __init__(self):
+        # Pre-allocates a flat table for 512k entires
+        self.entries = [None] * (512 * 1024)
+        self.pages_owned = []
+
+	# Checks if a virtual page number has a physical mapping.
+    def is_valid(self, v_page_num):
+        return self.entries[v_page_num] is not None
+
+	# Retrieves the physical page number for a given virtual page.
+    def get_physical_page(self, v_page_num):
+        return self.entries[v_page_num]
+
+	# Creats a new mapping between a virtual page and a physical.
+    def map(self, v_page_num, p_page_num):
+        self.entries[v_page_num] = p_page_num
+        self.pages_owned.append((v_page_num, p_page_num))
+
+	# Removes a mapping and marks the page as invalid.
+    def unmap(self, v_page_num):
+        self.entries[v_page_num] = None
+        self.pages_owned = [p for p in self.pages_owned if p[0] != v_page_num]
+
+
+class PhysicalMemoryManager:
+    def __init__(self, total_mb, percent_used):
+        total_bytes = total_mb * 1024 * 1024
+        self.total_pages = total_bytes // 4096
+        num_os_pages = int(self.total_pages * (percent_used / 100))
+        # Initially, all pages after the OS-reserved pages are free.
+        self.free_pages = list(range(num_os_pages, self.total_pages))
+        self.page_to_process = {}
+
+	# Removes and returns the first available free page, or None if empty.
+    def get_free_page(self):
+        return self.free_pages.pop(0) if self.free_pages else None
+
+def handle_memory_access(address, proc, phys_mem, all_procs):
+    # Calculate virtual page number
+    v_page_num = address // 4096
+
+    if not proc["page_table"].is_valid(v_page_num):
+        proc["page_faults"] += 1
+        p_page_num = phys_mem.get_free_page()
+
+        if p_page_num is None:
+            # RAM is full, snag a page from another process
+            p_page_num = snag_victim_page(all_procs)
+
+        proc["page_table"].map(v_page_num, p_page_num)
+
+    return proc["page_table"].get_physical_page(v_page_num)
+
+
+def snag_victim_page(all_procs, cache):
+    for p in all_procs:
+        if p["page_table"].pages_owned:
+            v_vic, p_vic = p["page_table"].pages_owned.pop(0)
+            p["page_table"].unmap(v_vic)
+
+            # Invalidate all cache blocks that belong to this physical page
+            cache.invalidate_page(p_vic)
+
+            return p_vic
+    return None
+
+# Milestone #3: Virtual Cache Simulation
+# TODO:
+# 
+# 
+#
 
 def main():
     values = read_args()
