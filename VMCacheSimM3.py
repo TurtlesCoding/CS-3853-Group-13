@@ -1,6 +1,5 @@
 # CS3853 Group 13, project milestone 1:
-import sys, math, os
-
+import sys, math, os, random
 
 # project milestone 2: page table and physical memory management classes
 class PageTable:
@@ -38,36 +37,166 @@ class PhysicalMemoryManager:
         return self.free_pages.pop(0) if self.free_pages else None
 
 
+# project milestone 3: cache class
 class Cache:
-    def __init__(self, cache_size_kb, block_size, associativity):
+    def __init__(self, cache_size_kb, block_size, associativity, replacement):
+        self.cache_size_kb = cache_size_kb
         self.block_size = block_size
-        pass
+        self.associativity = associativity
+        self.replacement = replacement
+
+        self.cache_size_bytes = cache_size_kb * 1024
+        self.total_blocks = self.cache_size_bytes // block_size
+        self.total_rows = self.total_blocks // associativity
+
+        self.cache = []
+        self.next_replace = []
+
+        # each row has associativity number of blocks
+        for i in range(self.total_rows):
+            row = []
+            for j in range(self.associativity):
+                row.append({"valid": False, "tag": None, "ever_used": False})
+            self.cache.append(row)
+            self.next_replace.append(0)
+
+        self.total_accesses = 0
+        self.hits = 0
+        self.misses = 0
+        self.compulsory_misses = 0
+        self.conflict_misses = 0
+
+    def get_index_and_tag(self, phys_addr):
+        block_num = phys_addr // self.block_size
+        index = block_num % self.total_rows
+        tag = block_num // self.total_rows
+        return index, tag
+
+    def access(self, phys_addr):
+        self.total_accesses += 1
+        index, tag = self.get_index_and_tag(phys_addr)
+        row = self.cache[index]
+
+        # check if it is already in cache
+        for block in row:
+            if block["valid"] and block["tag"] == tag:
+                self.hits += 1
+                return "hit"
+
+        # if not found, it is a miss
+        self.misses += 1
+
+        # check for an empty block first
+        for block in row:
+            if not block["valid"]:
+                self.compulsory_misses += 1
+                block["valid"] = True
+                block["tag"] = tag
+                block["ever_used"] = True
+                return "miss"
+
+        # no empty spot, so replace one
+        self.conflict_misses += 1
+
+        if self.replacement == "RND":
+            spot = random.randint(0, self.associativity - 1)
+        else:
+            spot = self.next_replace[index]
+            self.next_replace[index] = (self.next_replace[index] + 1) % self.associativity
+
+        row[spot]["valid"] = True
+        row[spot]["tag"] = tag
+        row[spot]["ever_used"] = True
+
+        return "miss"
 
     def invalidate_page(self, p_page_num):
         num_blocks_in_page = 4096 // self.block_size
 
-        # Calculate the starting physical address for this page
+        # calculate the starting physical address for this page
         start_phys_addr = p_page_num * 4096
 
         for i in range(num_blocks_in_page):
-
             target_addr = start_phys_addr + (i * self.block_size)
+            index, tag = self.get_index_and_tag(target_addr)
 
-            pass
+            for block in self.cache[index]:
+                if block["valid"] and block["tag"] == tag:
+                    block["valid"] = False
+                    block["tag"] = None
 
+    def count_used_blocks(self):
+        used = 0
 
-def handle_memory_access(address, proc, phys_mem, all_procs, cache):
+        for row in self.cache:
+            for block in row:
+                if block["ever_used"]:
+                    used += 1
+
+        return used
+
+#handle memory function reworked for M3, now also updates VM stats and takes cache as input to invalidate pages when needed
+def translate_address(address, proc, phys_mem, all_procs, cache, vm_results, count_stats=True):
     v_page_num = address // 4096
+    offset = address % 4096
+
     if proc["page_table"].is_valid(v_page_num):
-        return "hit"
-    p_page_num = phys_mem.get_free_page()
-    if p_page_num is None:
-        p_page_num = snag_victim_page(all_procs, cache)  # Added cache here
-        proc["page_table"].map(v_page_num, p_page_num)
-        return "fault"  # Changed "snag" to "fault" to match the counter name
+        if count_stats:
+            vm_results["hits"] += 1
+
+        p_page_num = proc["page_table"].get_physical_page(v_page_num)
+
     else:
+        p_page_num = phys_mem.get_free_page()
+
+        if p_page_num is None:
+            p_page_num = snag_victim_page(all_procs, cache)
+            vm_results["faults"] += 1
+            vm_results["cycles"] += 100
+        else:
+            if count_stats:
+                vm_results["free"] += 1
+
         proc["page_table"].map(v_page_num, p_page_num)
-        return "free"
+
+    return (p_page_num * 4096) + offset
+
+
+def process_cache_access(address, length, proc, phys_mem, processes, cache, vm_results, cache_results, is_instruction):
+    if is_instruction:
+        cache_results["instruction_bytes"] += length
+        cache_results["instructions"] += 1
+        cache_results["cycles"] += 2
+    else:
+        cache_results["srcdst_bytes"] += length
+        cache_results["cycles"] += 1
+
+    cache_results["addresses"] += 1
+
+    translate_address(address, proc, phys_mem, processes, cache, vm_results, True)
+
+    first_block = address // cache.block_size
+    last_block = (address + length - 1) // cache.block_size
+
+    for block_num in range(first_block, last_block + 1):
+        block_vaddr = block_num * cache.block_size
+
+        phys_addr = translate_address(
+            block_vaddr,
+            proc,
+            phys_mem,
+            processes,
+            cache,
+            vm_results,
+            False
+        )
+
+        result = cache.access(phys_addr)
+
+        if result == "hit":
+            cache_results["cycles"] += 1
+        else:
+            cache_results["cycles"] += 4 * math.ceil(cache.block_size / 4)
 
 
 def snag_victim_page(all_procs, cache):
@@ -157,7 +286,7 @@ def check_args(values):
 
     # possible input choices:
     valid_cache = [8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
-    valid_block = [8, 16, 32, 64]
+    valid_block = [4, 8, 16, 32, 64]
     valid_assoc = [1, 2, 4, 8, 16]
     valid_replace = ["RR", "RND"]
     valid_memory = [128, 256, 512, 1024, 2048, 4096]
@@ -325,6 +454,51 @@ def print_results(values, results):
         f"Total RAM for Page Table(s):    {results['total_ram_page_tables']} bytes  (512K entries * {len(values['files'])} .trc files * {results['page_table_entry_size']} / 8)"
     )
 
+# This function prints the cache simulation results, including hit/miss rates, CPI, and unused cache space/waste cost.
+def print_cache_results(values, results, cache, cache_results):
+    hit_rate = 0
+    miss_rate = 0
+
+    if cache.total_accesses > 0:
+        hit_rate = (cache.hits * 100) / cache.total_accesses
+        miss_rate = (cache.misses * 100) / cache.total_accesses
+
+    cpi = 0
+
+    if cache_results["instructions"] > 0:
+        cpi = cache_results["cycles"] / cache_results["instructions"]
+
+    used_blocks = cache.count_used_blocks()
+    unused_blocks = cache.total_blocks - used_blocks
+
+    overhead_per_block = results["overhead_size"] / cache.total_blocks
+    unused_kb = (unused_blocks * (cache.block_size + overhead_per_block)) / 1024
+    waste_cost = unused_kb * 0.07
+
+    print("\nMILESTONE #3: - Cache Simulation Results")
+    print("\n***** CACHE SIMULATION RESULTS *****")
+    print()
+    print(f"Total Cache Accesses:   {cache.total_accesses}  ({cache_results['addresses']} addresses)")
+    print(f"--- Instruction Bytes:  {cache_results['instruction_bytes']}")
+    print(f"--- SrcDst Bytes:       {cache_results['srcdst_bytes']}")
+    print(f"Cache Hits:             {cache.hits}")
+    print(f"Cache Misses:           {cache.misses}")
+    print(f"--- Compulsory Misses:  {cache.compulsory_misses}")
+    print(f"--- Conflict Misses:    {cache.conflict_misses}")
+    print()
+    print()
+    print("***** *****  CACHE HIT & MISS RATE:  ***** *****")
+    print()
+    print(f"Hit  Rate:              {hit_rate:.4f}%")
+    print(f"Miss Rate:              {miss_rate:.4f}%")
+    print(f"CPI:                    {cpi:.2f} Cycles/Instruction  ({cache_results['cycles']})")
+    print(
+        f"Unused Cache Space:     {unused_kb:.2f} KB / "
+        f"{results['implementation_memory_kb']:.2f} KB = "
+        f"{(unused_kb / results['implementation_memory_kb']) * 100:.2f}%  "
+        f"Waste: ${waste_cost:.2f}/chip"
+    )
+    print(f"Unused Cache Blocks:    {unused_blocks} / {cache.total_blocks}")
 
 def main():
     values = read_args()
@@ -332,12 +506,22 @@ def main():
     results = calculate_values(values)
     print_results(values, results)
 
-    total_hits = 0
-    total_from_free = 0
-    total_page_faults = 0
+    vm_results = {
+        "hits": 0,
+        "free": 0,
+        "faults": 0,
+        "cycles": 0
+    }
 
-    cache = Cache(values["cache_size"], values["block_size"], values["associativity"])
+    cache_results = {
+        "instruction_bytes": 0,
+        "srcdst_bytes": 0,
+        "instructions": 0,
+        "addresses": 0,
+        "cycles": 0
+    }
 
+    cache = Cache(values["cache_size"], values["block_size"],values["associativity"],values["replacement"])
     # --- Setup for Simulation ---
     phys_mem = PhysicalMemoryManager(
         values["physical_memory"], values["percent_system"]
@@ -403,23 +587,51 @@ def main():
                     src_addr = int(src_addr_str, 16)
 
                 # --- PROCESS ACCESSES AND UPDATE COUNTERS ---
-                for addr in [instr_addr, dst_addr, src_addr]:
-                    if addr is not None:
-                        res = handle_memory_access(
-                            addr, proc, phys_mem, processes, cache
-                        )
-                        if res == "hit":
-                            total_hits += 1
-                        elif res == "free":
-                            total_from_free += 1
-                        elif res == "fault":
-                            total_page_faults += 1
+                instr_len = int(line1[5:7])
+
+                process_cache_access(
+                    instr_addr,
+                    instr_len,
+                    proc,
+                    phys_mem,
+                    processes,
+                    cache,
+                    vm_results,
+                    cache_results,
+                    True
+                )
+
+                if dst_addr is not None:
+                    process_cache_access(
+                        dst_addr,
+                        4,
+                        proc,
+                        phys_mem,
+                        processes,
+                        cache,
+                        vm_results,
+                        cache_results,
+                        False
+                    )
+
+                if src_addr is not None:
+                    process_cache_access(
+                        src_addr,
+                        4,
+                        proc,
+                        phys_mem,
+                        processes,
+                        cache,
+                        vm_results,
+                        cache_results,
+                        False
+                    )
 
                 instructions_processed += 1
 
-    # --- FINAL MILESTONE #2 OUTPUT ---
+    # --- FINAL MILESTONE #2 OUTPUT (updated for M3)---
     pages_avail = phys_mem.total_pages - phys_mem.num_os_pages
-    total_mapped = total_hits + total_from_free + total_page_faults
+    total_mapped = vm_results["hits"] + vm_results["free"] + vm_results["faults"]
 
     print("\nMILESTONE #2: - Virtual Memory Simulation Results")
     print("\n***** VIRTUAL MEMORY SIMULATION RESULTS *****")
@@ -427,16 +639,15 @@ def main():
     print(f"Pages Available to User:       {pages_avail}")
     print(f"\nVirtual Pages Mapped:          {total_mapped}")
     print("-" * 35)
-    print(f"        Page Table Hits:    {total_hits}")
-    print(f"        Pages from Free:    {total_from_free}")
-    print(f"        Total Page Faults:  {total_page_faults}")
+    print(f"        Page Table Hits:    {vm_results['hits']}")
+    print(f"        Pages from Free:    {vm_results['free']}")
+    print(f"        Total Page Faults:  {vm_results['faults']}")
 
     print("\nPage Table Usage Per Process:")
     print("-" * 30)
 
     pte_size_bits = results["page_table_entry_size"]
     for i, proc in enumerate(processes):
-        # Count current entries or final entries
         used_entries = len(proc["page_table"].pages_owned)
         percent_used = (used_entries / 524288) * 100
         wasted_bytes = int((524288 - used_entries) * pte_size_bits / 8)
@@ -447,6 +658,10 @@ def main():
             f"        Used Page Table Entries: {used_entries}  ( {percent_used:.3f}%)"
         )
         print(f"        Page Table Wasted: {wasted_bytes} bytes")
+    
+    # --- MILESTONE #3 OUTPUT (cache results) ---
+    cache_results["cycles"] += vm_results["cycles"]
+    print_cache_results(values, results, cache, cache_results)
 
 
 if __name__ == "__main__":
