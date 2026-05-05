@@ -402,7 +402,6 @@ def calculate_values(values):
 
 
 def print_results(values, results):
-    print("MILESTONE #1:  Input Parameters and Calculated Values")
     print("Cache Simulator - CS 3853 - Team #13")
     print()
 
@@ -430,7 +429,7 @@ def print_results(values, results):
     print()
     print(f"Total # Blocks:                 {results['total_blocks']}")
     print(
-        f"Tag Size:                       {results['tag_bits']} bits        (based on actual physical memory)"
+        f"Tag Size:                       {results['tag_bits']} bits"
     )
     print(f"Index Size:                     {results['index_bits']} bits")
     print(f"Total # Rows:                   {results['total_rows']}")
@@ -445,13 +444,13 @@ def print_results(values, results):
     print()
     print(f"Number of Physical Pages:       {results['number_physical_pages']}")
     print(
-        f"Number of Pages for System:     {results['number_pages_for_system']}         ( {values['percent_system'] / 100:.2f} * {results['number_physical_pages']} = {results['number_pages_for_system']} )"
+        f"Number of Pages for System:     {results['number_pages_for_system']}"
     )
     print(
-        f"Size of Page Table Entry:       {results['page_table_entry_size']} bits        (1 valid bit, {results['physical_page_bits']} for PhysPage)"
+        f"Size of Page Table Entry:       {results['page_table_entry_size']} bits"
     )
     print(
-        f"Total RAM for Page Table(s):    {results['total_ram_page_tables']} bytes  (512K entries * {len(values['files'])} .trc files * {results['page_table_entry_size']} / 8)"
+        f"Total RAM for Page Table(s):    {results['total_ram_page_tables']} bytes"
     )
 
 # This function prints the cache simulation results, including hit/miss rates, CPI, and unused cache space/waste cost.
@@ -475,7 +474,6 @@ def print_cache_results(values, results, cache, cache_results):
     unused_kb = (unused_blocks * (cache.block_size + overhead_per_block)) / 1024
     waste_cost = unused_kb * 0.07
 
-    print("\nMILESTONE #3: - Cache Simulation Results")
     print("\n***** CACHE SIMULATION RESULTS *****")
     print()
     print(f"Total Cache Accesses:   {cache.total_accesses}  ({cache_results['addresses']} addresses)")
@@ -633,7 +631,6 @@ def main():
     pages_avail = phys_mem.total_pages - phys_mem.num_os_pages
     total_mapped = vm_results["hits"] + vm_results["free"] + vm_results["faults"]
 
-    print("\nMILESTONE #2: - Virtual Memory Simulation Results")
     print("\n***** VIRTUAL MEMORY SIMULATION RESULTS *****")
     print(f"\nPhysical Pages Used By SYSTEM: {phys_mem.num_os_pages}")
     print(f"Pages Available to User:       {pages_avail}")
